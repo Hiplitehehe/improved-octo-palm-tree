@@ -2,74 +2,48 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const ALLOWED_USERS = ["Hiplitehehe"]; // Replace with your GitHub username
 
-    // 🔹 Serve the Login Page
+    // Serve the login page
     if (url.pathname === "/login") {
-      const loginHtml = await env.R2_BUCKET.get("login.html"); // Adjust to your R2 bucket
-      return new Response(loginHtml.body, {
+      const loginHtml = await env.HTML_FILES.get("login.html");
+      return new Response(loginHtml, {
         headers: { "Content-Type": "text/html" },
       });
     }
 
-    // 🔹 Handle the GitHub OAuth Callback
+    // Handle GitHub OAuth callback
     if (url.pathname === "/callback") {
-      const code = url.searchParams.get("code");
-      if (!code) return new Response("Missing code", { status: 400 });
-
-      const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-        },
-        body: JSON.stringify({
-          client_id: env.GITHUB_CLIENT_ID,
-          client_secret: env.GITHUB_CLIENT_SECRET,
-          code,
-          redirect_uri: env.REDIRECT_URI,
-        }),
+      const callbackHtml = await env.HTML_FILES.get("callback.html");
+      return new Response(callbackHtml, {
+        headers: { "Content-Type": "text/html" },
       });
+    }
 
-      const tokenData = await tokenResponse.json();
-      if (!tokenData.access_token) {
-        return new Response(`Error: ${JSON.stringify(tokenData)}`, { status: 400 });
+    // Serve the notes page with dynamic content
+    if (url.pathname === "/notes") {
+      const notesHtml = await env.HTML_FILES.get("notes.html");
+
+      // Fetch approved notes data and handle GitHub API errors
+      let notesData;
+      try {
+        notesData = await fetchNotesData();
+      } catch (error) {
+        const errorMessage = `GitHub Error: ${error.message}`;
+        return new Response(errorMessage, {
+          headers: { "Content-Type": "text/html" },
+          status: 500,
+        });
       }
 
-      // Serve Callback Page
-      const callbackHtml = await env.R2_BUCKET.get("callback.html");
-      return new Response(callbackHtml.body, {
-        headers: { "Content-Type": "text/html" },
+      // Create a dynamic list of notes
+      let notesList = "<ul>";
+      notesData.forEach(note => {
+        notesList += `<li>${note.title}</li>`;
       });
-    }
+      notesList += "</ul>";
 
-    // 🔹 Display Approved Notes
-    if (url.pathname === "/notes") {
-      const repo = "hiplitehehe/bookish-octo-robot"; // Replace with your repo
-      const notesFile = "j.json";
-      const notesUrl = `https://api.github.com/repos/${repo}/contents/${notesFile}`;
-
-      const fetchNotes = await fetch(notesUrl, {
-        headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, "Accept": "application/vnd.github.v3+json" },
-      });
-
-      if (!fetchNotes.ok) return new Response("Failed to fetch notes", { status: 500 });
-
-      const fileData = await fetchNotes.json();
-      const notes = JSON.parse(atob(fileData.content));
-
-      // Filter only approved notes
-      const approvedNotes = notes.filter(note => note.approved);
-
-      // Build HTML response
-      let notesHtml = "<ul>";
-      approvedNotes.forEach(note => {
-        notesHtml += `<li>${note.title}</li>`;
-      });
-      notesHtml += "</ul>";
-
-      const notesPageHtml = await env.R2_BUCKET.get("notes.html");
-      const finalHtml = notesPageHtml.body.replace("{{notes}}", notesHtml); // Insert notes into the HTML template
+      // Replace the placeholder in the notes HTML template
+      const finalHtml = notesHtml.replace("{{notes}}", notesList);
 
       return new Response(finalHtml, {
         headers: { "Content-Type": "text/html" },
@@ -79,3 +53,17 @@ export default {
     return new Response("Not Found", { status: 404 });
   },
 };
+
+// Mock function for fetching approved notes (replace with actual GitHub API logic)
+async function fetchNotesData() {
+  // Simulating a GitHub API request that could fail
+  const response = await fetch("https://api.github.com/repos/hiplitehehe/Notes/contents/j.json");
+  if (!response.ok) {
+    throw new Error(`GitHub API error: ${response.statusText}`);
+  }
+  const data = await response.json();
+
+  // Simulate decoding and returning notes
+  const notes = JSON.parse(atob(data.content));
+  return notes.filter(note => note.approved); // Filter approved notes
+}
