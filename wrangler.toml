@@ -6,7 +6,7 @@ workers_dev = true
 route = ""
 zone_id = ""
 
-compatibility_date = "2025-02-28"
+compatibility_date = "2025-03-02"
 
 [build]
 command = ""
