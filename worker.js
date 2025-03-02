@@ -3,64 +3,37 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Serve the login page
-    if (url.pathname === "/login") {
-      return Response.redirect(
-        `https://github.com/login/oauth/authorize?client_id=${env.GITHUB_CLIENT_ID}&redirect_uri=${env.REDIRECT_URI}&scope=repo`,
-        302
-      );
-    }
-
-    // Handle GitHub OAuth callback
-    if (url.pathname === "/callback") {
-      return new Response(await env.HTML_FILES.get("callback.html"), {
+    // 🔹 Serve the dashboard page
+    if (url.pathname === "/dashboard") {
+      const dashboardHtml = await env.HTML_FILES.get("dashboard.html");
+      return new Response(dashboardHtml, {
         headers: { "Content-Type": "text/html" },
       });
     }
 
-    // Serve the notes page and fetch approved notes
-    if (url.pathname === "/notes") {
-      return await fetchNotesPage(env);
+    // 🔹 Fetch all notes (both approved and pending)
+    if (url.pathname === "/api/all-notes") {
+      return await fetchAllNotes(env);
     }
 
-    // API route to fetch notes from GitHub
-    if (url.pathname === "/api/notes") {
-      return await fetchNotesData(env);
+    // 🔹 Make a new note
+    if (url.pathname === "/make-note" && request.method === "POST") {
+      return await makeNote(request, env);
+    }
+
+    // 🔹 Approve a note
+    if (url.pathname === "/approve" && request.method === "POST") {
+      return await approveNote(request, env);
     }
 
     return new Response("Not Found", { status: 404 });
   },
 };
 
-// Fetch and return the notes page with GitHub data injected
-async function fetchNotesPage(env) {
+// Fetch all notes from GitHub
+async function fetchAllNotes(env) {
   try {
-    const notesHtml = await env.HTML_FILES.get("notes.html");
-    const notesResponse = await fetchNotesData(env);
-
-    if (!notesResponse.ok) {
-      return new Response(`GitHub API Error: ${notesResponse.statusText}`, { status: notesResponse.status });
-    }
-
-    const notesData = await notesResponse.json();
-    let notesList = "<ul>";
-    notesData.forEach((note) => {
-      notesList += `<li>${note.title}</li>`;
-    });
-    notesList += "</ul>";
-
-    return new Response(notesHtml.replace("{{notes}}", notesList), {
-      headers: { "Content-Type": "text/html" },
-    });
-  } catch (error) {
-    return new Response(`Internal Server Error: ${error.message}`, { status: 500 });
-  }
-}
-
-// Fetch approved notes from GitHub
-async function fetchNotesData(env) {
-  try {
-    const repo = "hiplitehehe/Notes"; // Replace with your repo
+    const repo = "hiplitehehe/Notes";
     const notesFile = "j.json";
     const notesUrl = `https://api.github.com/repos/${repo}/contents/${notesFile}`;
 
@@ -73,29 +46,73 @@ async function fetchNotesData(env) {
     });
 
     if (!response.ok) {
-      const errorBody = await response.text();
-      return new Response(
-        JSON.stringify({
-          error: `GitHub API Error: ${response.status} ${response.statusText}`,
-          details: errorBody,
-        }),
-        { status: response.status, headers: { "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "GitHub API Error", details: await response.text() }), { 
+        status: response.status, 
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     const fileData = await response.json();
     const notes = JSON.parse(atob(fileData.content));
 
-    return new Response(JSON.stringify(notes.filter(note => note.approved)), {
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify(notes), { headers: { "Content-Type": "application/json" } });
   } catch (error) {
-    return new Response(
-      JSON.stringify({
-        error: "Internal Server Error",
-        details: error.message,
+    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.message }), { 
+      status: 500, 
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+}
+
+// Approve a note by updating GitHub
+async function approveNote(request, env) {
+  try {
+    const { title } = await request.json();
+    if (!title) return new Response("Missing note title", { status: 400 });
+
+    // Fetch notes
+    const repo = "hiplitehehe/Notes";
+    const notesFile = "j.json";
+    const notesUrl = `https://api.github.com/repos/${repo}/contents/${notesFile}`;
+
+    const fetchNotes = await fetch(notesUrl, {
+      headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, "Accept": "application/vnd.github.v3+json" },
+    });
+
+    if (!fetchNotes.ok) return new Response("Failed to fetch notes", { status: 500 });
+
+    const fileData = await fetchNotes.json();
+    let notes = JSON.parse(atob(fileData.content));
+    const sha = fileData.sha;
+
+    // Find and approve note
+    const note = notes.find(n => n.title === title);
+    if (!note) return new Response("Note not found", { status: 404 });
+
+    note.approved = true;
+
+    // Update GitHub file
+    const updateResponse = await fetch(notesUrl, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        "Accept": "application/vnd.github.v3+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: `Approved note: ${title}`,
+        content: btoa(JSON.stringify(notes, null, 2)),
+        sha: sha,
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    });
+
+    if (!updateResponse.ok) return new Response("Failed to approve note", { status: 500 });
+
+    return new Response(JSON.stringify({ message: `Note "${title}" approved!` }), { headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.message }), { 
+      status: 500, 
+      headers: { "Content-Type": "application/json" }
+    });
   }
 }
