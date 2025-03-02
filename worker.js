@@ -38,7 +38,7 @@ export default {
       const dashboardHtml = await env.HTML_FILES.get("dashboard.html");
       const token = await getTokenFromRequest(request);
       if (!token) {
-        return Response.redirect('/login', 302);
+        return Response.redirect('https://my-worker.hiplitehehe.workers.dev/login', 302);
       }
 
       // Show the dashboard content based on the token (you can add more logic here)
