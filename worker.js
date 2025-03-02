@@ -4,6 +4,13 @@ export default {
     const url = new URL(request.url);
     const token = request.headers.get("Authorization")?.split(" ")[1];
 
+    if (url.pathname === "/login") {
+  return Response.redirect(
+    `https://github.com/login/oauth/authorize?client_id=${env.GITHUB_CLIENT_ID}&redirect_uri=${env.REDIRECT_URI}&scope=repo`,
+    302
+  );
+}
+    
     // Serve Dashboard HTML
     if (url.pathname === "/dashboard") {
       const dashboardHtml = await env.HTML_FILES.get("dashboard.html");
