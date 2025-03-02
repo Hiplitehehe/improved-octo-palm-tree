@@ -13,7 +13,6 @@ export default {
 
     // Handle GitHub OAuth callback
     if (url.pathname === "/callback") {
-      const callbackHtml = await env.HTML_FILES.get("callback.html");
       const urlParams = new URLSearchParams(url.search);
       const code = urlParams.get("code");
 
@@ -27,33 +26,23 @@ export default {
           return new Response("Error: Failed to exchange code for token", { status: 500 });
         }
 
-        return new Response(`Login Successful. Token: ${token}`, { status: 200 });
+        // Store the token in the session or as a cookie
+        return Response.redirect('/dashboard', 302);
       } catch (error) {
         return new Response(`Exchange Error: ${error.message}`, { status: 500 });
       }
     }
 
-    // Serve the notes page
-    if (url.pathname === "/notes") {
-      const notesHtml = await env.HTML_FILES.get("notes.html");
-      const notesData = await fetchNotesData(); // Fetch approved notes data (this can be a GitHub API request)
-      let notesList = "<ul>";
+    // Serve the dashboard page
+    if (url.pathname === "/dashboard") {
+      const dashboardHtml = await env.HTML_FILES.get("dashboard.html");
+      const token = await getTokenFromRequest(request);
+      if (!token) {
+        return Response.redirect('/login', 302);
+      }
 
-      notesData.forEach(note => {
-        notesList += `<li>${note.title}</li>`;
-      });
-
-      notesList += "</ul>";
-      const finalHtml = notesHtml.replace("{{notes}}", notesList);
-      return new Response(finalHtml, {
-        headers: { "Content-Type": "text/html" },
-      });
-    }
-
-    // Handle make note
-    if (url.pathname === "/make-note") {
-      const makeNoteHtml = await env.HTML_FILES.get("make-note.html");
-      return new Response(makeNoteHtml, {
+      // Show the dashboard content based on the token (you can add more logic here)
+      return new Response(dashboardHtml.replace("{{token}}", token), {
         headers: { "Content-Type": "text/html" },
       });
     }
@@ -82,11 +71,22 @@ async function exchangeCodeForToken(code, env) {
   return token;
 }
 
-// Mock function for fetching approved notes
+// Mock function for fetching notes data
 async function fetchNotesData() {
-  // Replace with actual fetching logic from GitHub or your backend
   return [
     { title: "Approved Note 1" },
     { title: "Approved Note 2" },
   ];
+}
+
+// Get the token from cookies or request headers (you can adjust this based on your logic)
+async function getTokenFromRequest(request) {
+  const cookies = request.headers.get("Cookie");
+  if (cookies) {
+    const match = cookies.match(/token=([^;]+)/);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
 }
