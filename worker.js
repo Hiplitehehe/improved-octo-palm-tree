@@ -1,8 +1,20 @@
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const pathname = url.pathname;
+
+    if (url.pathname === "/dashboard") {
+      const dashboardHtml = await env.HTML_FILES.get("dashboard.html");
+      if (!dashboardHtml) {
+        return new Response("Dashboard not found", { status: 404 });
+      }
+      return new Response(dashboardHtml, {
+        headers: { "Content-Type": "text/html" },
+      });
+    }
+
+    return new Response("Not Found", { status: 404 });
+  }
+};
 
     if (pathname === "/admin") {
   const token = url.searchParams.get("token");
@@ -61,58 +73,6 @@ export default {
   });
 }
     
-    if (pathname === "/dashboard") {
-  let token = url.searchParams.get("token") || request.headers.get("Authorization");
-
-  // If no token in URL, check localStorage (via a script)
-  const dashboardHtml = `
-    <html>
-      <head><title>Dashboard</title></head>
-      <body>
-        <h1>Dashboard</h1>
-        <p id="login-info">Checking login...</p>
-        <button onclick="logout()">Logout</button>
-        <button onclick="location.href='/admin?token=' + localStorage.getItem('token')">Go to Admin</button>
-
-        <h2>Notes</h2>
-        <div id="notes">Loading...</div>
-
-        <script>
-          // Store token in localStorage
-          let token = new URLSearchParams(window.location.search).get('token');
-          if (token) {
-            localStorage.setItem('token', token);
-          } else {
-            token = localStorage.getItem('token');
-          }
-
-          // Display login info
-          document.getElementById('login-info').innerText = "Logged in with token: " + (token || "Not Found");
-
-          // Fetch and display notes
-          fetch('/notes', {
-            headers: { 'Authorization': 'Bearer ' + token }
-          })
-          .then(res => res.text())
-          .then(data => document.getElementById('notes').innerHTML = data)
-          .catch(() => document.getElementById('notes').innerText = "Failed to load notes");
-
-          // Logout function
-          function logout() {
-            localStorage.removeItem('token');
-            location.href = '/login';
-          }
-        </script>
-      </body>
-    </html>
-  `;
-
-  return new Response(dashboardHtml, {
-    headers: { "Content-Type": "text/html" },
-    status: 200,
-  });
-    }
-  
     // 🔹 Login Route (Redirect to GitHub OAuth)
     if (pathname === "/login") {
       return Response.redirect(
