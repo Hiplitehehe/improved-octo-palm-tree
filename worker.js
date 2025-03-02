@@ -27,7 +27,7 @@ export default {
         }
 
         // Store the token in the session or as a cookie
-        return Response.redirect('/dashboard', 302);
+        return Response.redirect('https://my-worker.hiplitehehe.workers.dev/dashboard', 302);
       } catch (error) {
         return new Response(`Exchange Error: ${error.message}`, { status: 500 });
       }
