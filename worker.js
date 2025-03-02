@@ -90,7 +90,7 @@ export default {
 // 🔹 Fetch Notes (Admin Sees All, Others See Approved Only)
 async function fetchNotes(env, isAdmin) {
   try {
-    const response = await fetch(`https://api.github.com/repos/hiplitehehe/notes/contents/j.json`, {
+    const response = await fetch(`https://api.github.com/repos/Hiplitehehe/Notes/contents/j.json`, {
       headers: { "User-Agent": "Cloudflare-Worker" }
     });
 
@@ -116,7 +116,7 @@ async function fetchNotes(env, isAdmin) {
 // 🔹 Add a New Note (Unapproved by Default)
 async function addNote(env, newNote) {
   try {
-    const response = await fetch(`https://api.github.com/repos/hiplitehehe/notes/contents/j.json`, {
+    const response = await fetch(`https://api.github.com/repos/Hiplitehehe/Notes/contents/j.json`, {
       headers: { "User-Agent": "Cloudflare-Worker" }
     });
 
@@ -143,7 +143,7 @@ async function addNote(env, newNote) {
 // 🔹 Approve a Note (Admins Only)
 async function approveNote(env, noteTitle) {
   try {
-    const response = await fetch(`https://api.github.com/repos/hiplitehehe/notes/contents/j.json`, {
+    const response = await fetch(`https://api.github.com/repos/Hiplitehehe/Notes/contents/j.json`, {
       headers: { "User-Agent": "Cloudflare-Worker" }
     });
 
@@ -172,7 +172,7 @@ async function approveNote(env, noteTitle) {
 
 // 🔹 Update Notes in GitHub
 async function updateNotes(env, notes, commitMessage) {
-  const notesUrl = `https://api.github.com/repos/hiplitehehe/notes/contents/j.json`;
+  const notesUrl = `https://api.github.com/repos/Hiplitehehe/Notes/contents/j.json`;
 
   const fileResponse = await fetch(notesUrl, {
     headers: { "User-Agent": "Cloudflare-Worker" }
