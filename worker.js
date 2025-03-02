@@ -1,4 +1,3 @@
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -13,10 +12,26 @@ export default {
 
     // Handle GitHub OAuth callback
     if (url.pathname === "/callback") {
-      const callbackHtml = await env.HTML_FILES.get("callback.html");
-      return new Response(callbackHtml, {
-        headers: { "Content-Type": "text/html" },
-      });
+      const params = new URLSearchParams(url.search);
+      const code = params.get("code");
+
+      if (!code) {
+        return new Response("Error: No code received", { status: 400 });
+      }
+
+      // Exchange the authorization code for an access token
+      try {
+        const accessToken = await getGitHubAccessToken(code, env);
+        // Store the token in a cookie or another secure storage (e.g., KV store, session)
+        const headers = new Headers();
+        headers.set("Set-Cookie", `access_token=${accessToken}; HttpOnly; Secure; Path=/;`);
+
+        return new Response("Logged in successfully!", {
+          headers,
+        });
+      } catch (error) {
+        return new Response("Error during OAuth exchange", { status: 500 });
+      }
     }
 
     // Serve the notes page with dynamic content
@@ -54,9 +69,19 @@ export default {
       });
     }
 
-    // Serve the dashboard page with dynamic content (create and manage notes)
+    // Serve the dashboard page with dynamic content
     if (url.pathname === "/dashboard") {
       const dashboardHtml = await env.HTML_FILES.get("dashboard.html");
+
+      // Check if the user is logged in by checking the access token cookie
+      const accessToken = getAccessTokenFromCookie(request);
+
+      if (!accessToken) {
+        return new Response("You must log in to view the dashboard", {
+          status: 401,
+          headers: { "Content-Type": "text/html" },
+        });
+      }
 
       // Fetch approved notes data and handle GitHub API errors
       let notesData;
@@ -112,9 +137,46 @@ export default {
   },
 };
 
+// Function to get GitHub access token using the authorization code
+async function getGitHubAccessToken(code, env) {
+  const clientId = env.GITHUB_CLIENT_ID;
+  const clientSecret = env.GITHUB_CLIENT_SECRET;
+  const redirectUri = `${env.SITE_URL}/callback`;
+
+  const response = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: {
+      "Accept": "application/json",
+    },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code: code,
+      redirect_uri: redirectUri,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(data.error_description);
+  }
+
+  return data.access_token;
+}
+
+// Helper function to get access token from cookie
+function getAccessTokenFromCookie(request) {
+  const cookie = request.headers.get("Cookie");
+  if (!cookie) return null;
+
+  const match = cookie.match(/access_token=([^;]+)/);
+  return match ? match[1] : null;
+}
+
 // Fetch approved notes data from GitHub repository with custom User-Agent
 async function fetchNotesData(env) {
-  const repo = "hiplitehehe/Notes"; // Replace with your repo name
+  const repo = "Hiplitehehe/Notes"; // Replace with your repo name
   const notesFile = "j.json"; // The file containing the notes
   const notesUrl = `https://api.github.com/repos/${repo}/contents/${notesFile}`;
 
