@@ -2,178 +2,174 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-
+    
+    // 🔹 Serve Dashboard
     if (url.pathname === "/dashboard") {
       const dashboardHtml = await env.HTML_FILES.get("dashboard.html");
       return new Response(dashboardHtml, { headers: { "Content-Type": "text/html" } });
     }
 
+    // 🔹 Serve Login Page
+    if (url.pathname === "/login") {
+      return Response.redirect(
+        `https://github.com/login/oauth/authorize?client_id=${env.GITHUB_CLIENT_ID}&scope=user`,
+        302
+      );
+    }
+
+    // 🔹 Handle GitHub OAuth Callback
+    if (url.pathname === "/callback") {
+      const code = url.searchParams.get("code");
+      if (!code) return new Response("GitHub OAuth failed", { status: 400 });
+
+      const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          client_id: env.GITHUB_CLIENT_ID,
+          client_secret: env.GITHUB_CLIENT_SECRET,
+          code,
+        }),
+      });
+
+      const { access_token } = await tokenResponse.json();
+      if (!access_token) return new Response("GitHub OAuth failed", { status: 400 });
+
+      // Get user data
+      const userResponse = await fetch("https://api.github.com/user", {
+        headers: { Authorization: `Bearer ${access_token}`, "User-Agent": "CloudflareWorker" },
+      });
+
+      const userData = await userResponse.json();
+      if (!userData.login) return new Response("GitHub OAuth failed", { status: 400 });
+
+      // Store user login in cookie
+      const headers = new Headers();
+      headers.append("Set-Cookie", `user=${userData.login}; Path=/; HttpOnly`);
+      return new Response("Login successful! Redirecting...", {
+        headers,
+        status: 302,
+      });
+    }
+
+    // 🔹 Fetch Notes
     if (url.pathname === "/notes") {
-      return await getNotes(env);
+      return await fetchNotes(env);
     }
 
+    // 🔹 Create New Note (Requires Login)
     if (url.pathname === "/make-note" && request.method === "POST") {
-      return await makeNote(request, env);
+      return await createNote(request, env);
     }
 
-    if (url.pathname === "/approve" && request.method === "POST") {
-      return await approveNote(request, env);
+    // 🔹 Approve a Note (Requires Admin)
+    if (url.pathname.startsWith("/approve/") && request.method === "POST") {
+      return await approveNote(url.pathname.split("/")[2], request, env);
     }
 
     return new Response("Not Found", { status: 404 });
   }
 };
 
-// 🔹 Function to Get Approved Notes
-async function getNotes(env) {
-  const repo = "Hiplitehehe/Notes";
-  const notesFile = "j.json";
-  const notesUrl = `https://api.github.com/repos/${repo}/contents/${notesFile}`;
+// ✅ Fetch Notes from GitHub
+async function fetchNotes(env) {
+  const notesUrl = `https://api.github.com/repos/hiplitehehe/Notes/contents/j.json`;
 
-  try {
-    const response = await fetch(notesUrl, {
-      headers: {
-        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "hiplitehehe-Notes-App",
-      },
-    });
+  const response = await fetch(notesUrl, {
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, "User-Agent": "CloudflareWorker" },
+  });
 
-    if (!response.ok) {
-      const errorDetails = await response.text();
-      return new Response(JSON.stringify({ error: "GitHub API Error", status: response.status, details: errorDetails }), {
-        headers: { "Content-Type": "application/json" },
-        status: response.status,
-      });
-    }
-
-    const fileData = await response.json();
-    const notes = JSON.parse(atob(fileData.content));
-    const approvedNotes = notes.filter(note => note.approved);
-
-    return new Response(JSON.stringify(approvedNotes), { headers: { "Content-Type": "application/json" }, status: 200 });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.message }), { status: 500 });
+  if (!response.ok) {
+    return new Response(`GitHub Error: ${response.statusText}`, { status: response.status });
   }
+
+  const fileData = await response.json();
+  const notes = JSON.parse(atob(fileData.content));
+  return new Response(JSON.stringify(notes), { headers: { "Content-Type": "application/json" } });
 }
 
-// 🔹 Function to Make a Note
-async function makeNote(request, env) {
-  try {
-    const { title, content } = await request.json();
-    if (!title || !content) return new Response("Missing title or content", { status: 400 });
+// ✅ Create New Note (Requires Login)
+async function createNote(request, env) {
+  const user = getUserFromCookie(request);
+  if (!user) return new Response("Unauthorized", { status: 401 });
 
-    const repo = "Hiplitehehe/Notes";
-    const notesFile = "j.json";
-    const notesUrl = `https://api.github.com/repos/${repo}/contents/${notesFile}`;
+  const { title, content } = await request.json();
+  if (!title || !content) return new Response("Missing fields", { status: 400 });
 
-    const fetchNotes = await fetch(notesUrl, {
-      headers: {
-        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "hiplitehehe-Notes-App",
-      },
-    });
+  const notesUrl = `https://api.github.com/repos/hiplitehehe/Notes/contents/j.json`;
+  const fetchNotes = await fetch(notesUrl, {
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, "User-Agent": "CloudflareWorker" },
+  });
 
-    let notes = [];
-    let sha = null;
-    if (fetchNotes.ok) {
-      const fileData = await fetchNotes.json();
-      notes = JSON.parse(atob(fileData.content));
-      sha = fileData.sha;
-    }
-
-    notes.push({ title, content, approved: false });
-
-    const updateResponse = await fetch(notesUrl, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "hiplitehehe-Notes-App",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: `Added note: ${title}`,
-        content: btoa(JSON.stringify(notes, null, 2)),
-        sha: sha,
-      }),
-    });
-
-    if (!updateResponse.ok) {
-      const errorDetails = await updateResponse.text();
-      return new Response(JSON.stringify({ error: "GitHub API Error", details: errorDetails }), {
-        headers: { "Content-Type": "application/json" },
-        status: 500,
-      });
-    }
-
-    return new Response(JSON.stringify({ message: `Note "${title}" added!` }), { headers: { "Content-Type": "application/json" } });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.message }), { status: 500 });
-  }
-}
-
-// 🔹 Function to Approve a Note
-async function approveNote(request, env) {
-  try {
-    const { title } = await request.json();
-    if (!title) return new Response("Missing note title", { status: 400 });
-
-    const repo = "Hiplitehehe/Notes";
-    const notesFile = "j.json";
-    const notesUrl = `https://api.github.com/repos/${repo}/contents/${notesFile}`;
-
-    const fetchNotes = await fetch(notesUrl, {
-      headers: {
-        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "hiplitehehe-Notes-App",
-      },
-    });
-
-    if (!fetchNotes.ok) {
-      const errorDetails = await fetchNotes.text();
-      return new Response(JSON.stringify({ error: "GitHub API Error", details: errorDetails }), {
-        headers: { "Content-Type": "application/json" },
-        status: 500,
-      });
-    }
-
+  let notes = [], sha = "";
+  if (fetchNotes.ok) {
     const fileData = await fetchNotes.json();
-    let notes = JSON.parse(atob(fileData.content));
-    const sha = fileData.sha;
-
-    const note = notes.find(n => n.title === title);
-    if (!note) return new Response("Note not found", { status: 404 });
-
-    note.approved = true;
-
-    const updateResponse = await fetch(notesUrl, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "hiplitehehe-Notes-App",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: `Approved note: ${title}`,
-        content: btoa(JSON.stringify(notes, null, 2)),
-        sha: sha,
-      }),
-    });
-
-    if (!updateResponse.ok) {
-      const errorDetails = await updateResponse.text();
-      return new Response(JSON.stringify({ error: "GitHub API Error", details: errorDetails }), {
-        headers: { "Content-Type": "application/json" },
-        status: 500,
-      });
-    }
-
-    return new Response(JSON.stringify({ message: `Note "${title}" approved!` }), { headers: { "Content-Type": "application/json" } });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: "Internal Server Error", details: error.message }), { status: 500 });
+    notes = JSON.parse(atob(fileData.content));
+    sha = fileData.sha;
   }
+
+  notes.push({ id: Date.now(), title, content, approved: false, author: user });
+
+  const updateResponse = await fetch(notesUrl, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+      "User-Agent": "CloudflareWorker",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message: `Added note: ${title}`,
+      content: btoa(JSON.stringify(notes, null, 2)),
+      sha: sha,
+    }),
+  });
+
+  if (!updateResponse.ok) return new Response("Failed to add note", { status: 500 });
+  return new Response("Note submitted!", { status: 200 });
+}
+
+// ✅ Approve a Note (Only for Admin)
+async function approveNote(noteId, request, env) {
+  const user = getUserFromCookie(request);
+  if (!user || user !== "adminUser") return new Response("Forbidden", { status: 403 });
+
+  const notesUrl = `https://api.github.com/repos/hiplitehehe/Notes/contents/j.json`;
+
+  const fetchNotes = await fetch(notesUrl, {
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, "User-Agent": "CloudflareWorker" },
+  });
+
+  if (!fetchNotes.ok) return new Response("Failed to fetch notes", { status: 500 });
+
+  const fileData = await fetchNotes.json();
+  let notes = JSON.parse(atob(fileData.content));
+  let sha = fileData.sha;
+
+  let note = notes.find(n => n.id == noteId);
+  if (note) note.approved = true;
+
+  const updateResponse = await fetch(notesUrl, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+      "User-Agent": "CloudflareWorker",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message: `Approved note: ${note.title}`,
+      content: btoa(JSON.stringify(notes, null, 2)),
+      sha: sha,
+    }),
+  });
+
+  if (!updateResponse.ok) return new Response("Failed to approve note", { status: 500 });
+  return new Response("Note approved!", { status: 200 });
+}
+
+// ✅ Get User from Cookie
+function getUserFromCookie(request) {
+  const cookie = request.headers.get("Cookie");
+  if (!cookie) return null;
+  const match = cookie.match(/user=([^;]+)/);
+  return match ? match[1] : null;
 }
