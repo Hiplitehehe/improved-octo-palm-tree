@@ -62,57 +62,45 @@ export default {
 }
     
     if (pathname === "/dashboard") {
-  const token = url.searchParams.get("token");
-  if (!token) return new Response("Missing token", { status: 401 });
+  let token = url.searchParams.get("token") || request.headers.get("Authorization");
 
-  const isAdmin = token === env.ADMIN_TOKEN;
-  const notesUrl = `https://api.github.com/repos/hiplitehehe/notes/contents/j.json`;
-
-  const notesResponse = await fetch(notesUrl, {
-    headers: {
-      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-      "Accept": "application/vnd.github.v3+json",
-      "User-Agent": "YourApp",
-    },
-  });
-
-  if (!notesResponse.ok) return new Response("Failed to fetch notes", { status: 500 });
-
-  const fileData = await notesResponse.json();
-  let notes = JSON.parse(atob(fileData.content));
-
-  if (!isAdmin) {
-    notes = notes.filter(note => note.approved);
-  }
-
-  let noteList = "<ul>";
-  notes.forEach(note => {
-    noteList += `<li>${note.title} ${
-      isAdmin && !note.approved ? `<button onclick="approve('${note.title}')">Approve</button>` : ""
-    }</li>`;
-  });
-  noteList += "</ul>";
-
-  const adminButton = isAdmin
-    ? `<button onclick="location.href='/admin?token=${token}'">Go to Admin</button>`
-    : "";
-
+  // If no token in URL, check localStorage (via a script)
   const dashboardHtml = `
     <html>
       <head><title>Dashboard</title></head>
       <body>
         <h1>Dashboard</h1>
-        <p>Logged in with token: ${isAdmin ? "Admin" : token}</p>
-        ${adminButton}
+        <p id="login-info">Checking login...</p>
+        <button onclick="logout()">Logout</button>
+        <button onclick="location.href='/admin?token=' + localStorage.getItem('token')">Go to Admin</button>
+
         <h2>Notes</h2>
-        ${noteList}
+        <div id="notes">Loading...</div>
+
         <script>
-          function approve(title) {
-            fetch('/approve', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ${token}' },
-              body: JSON.stringify({ title })
-            }).then(() => location.reload());
+          // Store token in localStorage
+          let token = new URLSearchParams(window.location.search).get('token');
+          if (token) {
+            localStorage.setItem('token', token);
+          } else {
+            token = localStorage.getItem('token');
+          }
+
+          // Display login info
+          document.getElementById('login-info').innerText = "Logged in with token: " + (token || "Not Found");
+
+          // Fetch and display notes
+          fetch('/notes', {
+            headers: { 'Authorization': 'Bearer ' + token }
+          })
+          .then(res => res.text())
+          .then(data => document.getElementById('notes').innerHTML = data)
+          .catch(() => document.getElementById('notes').innerText = "Failed to load notes");
+
+          // Logout function
+          function logout() {
+            localStorage.removeItem('token');
+            location.href = '/login';
           }
         </script>
       </body>
@@ -123,7 +111,7 @@ export default {
     headers: { "Content-Type": "text/html" },
     status: 200,
   });
-}
+    }
   
     // 🔹 Login Route (Redirect to GitHub OAuth)
     if (pathname === "/login") {
