@@ -10,6 +10,35 @@ export default {
       return new Response(dashboardHtml, { headers: { "Content-Type": "text/html" } });
     }
 
+    if (url.pathname === "/callback") {
+  const code = url.searchParams.get("code");
+  if (!code) return new Response("Missing code", { status: 400 });
+
+  const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: { 
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    body: JSON.stringify({
+      client_id: env.GITHUB_CLIENT_ID,
+      client_secret: env.GITHUB_CLIENT_SECRET,
+      code,
+      redirect_uri: env.REDIRECT_URI
+    })
+  });
+
+  const tokenData = await tokenResponse.json();
+  if (!tokenData.access_token) {
+    return new Response(`GitHub Error: ${JSON.stringify(tokenData)}`, { status: 400 });
+  }
+
+  return Response.redirect(
+    `https://my-worker.hiplitehehe.workers.dev/dashboard?token=${tokenData.access_token}`,
+    302
+  );
+}
+    
     // Get GitHub User Info
     if (url.pathname === "/whoami") {
       if (!token) return new Response(JSON.stringify({ error: "No token provided" }), { status: 401 });
