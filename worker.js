@@ -20,35 +20,35 @@ export default {
 
     // 🔹 Handle OAuth callback
     if (url.pathname === "/callback") {
-      const code = url.searchParams.get("code");
-      if (!code) return new Response("Missing code", { status: 400 });
+    const code = url.searchParams.get("code");
+    if (!code) return new Response("Missing code", { status: 400 });
 
-      const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
+    const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
         method: "POST",
         headers: { 
-          "Content-Type": "application/json",
-          "Accept": "application/json"
+            "Content-Type": "application/json",
+            "Accept": "application/json"
         },
         body: JSON.stringify({
-          client_id: env.GITHUB_CLIENT_ID,
-          client_secret: env.GITHUB_CLIENT_SECRET,
-          code
+            client_id: env.GITHUB_CLIENT_ID,
+            client_secret: env.GITHUB_CLIENT_SECRET,
+            code,
+            redirect_uri: env.REDIRECT_URI
         })
-      });
+    });
 
-      const tokenData = await tokenResponse.json();
-      if (!tokenData.access_token) {
-        return new Response(`Error: ${JSON.stringify(tokenData)}`, { status: 400 });
-      }
-
-      return new Response(JSON.stringify({ token: tokenData.access_token }), {
-        headers: { "Content-Type": "application/json" },
-      });
+    const tokenData = await tokenResponse.json();
+    if (!tokenData.access_token) {
+        return new Response(`GitHub Error: ${JSON.stringify(tokenData)}`, { status: 400 });
     }
 
+    // Redirect back to the dashboard with the token
+    return Response.redirect(`https://my-worker.hiplitehehe.workers.dev/dashboard?token=${tokenData.access_token}`, 302);
+}
+    
     // 🔹 Get approved notes
     if (url.pathname === "/notes") {
-      const repo = "hiplitehehe/notes";
+      const repo = "Hiplitehehe/Notes";
       const notesUrl = `https://api.github.com/repos/${repo}/contents/j.json`;
 
       const fetchNotes = await fetch(notesUrl, {
@@ -71,7 +71,7 @@ export default {
       const body = await request.json();
       if (!body.title || !body.content) return new Response("Title and content required", { status: 400 });
 
-      const repo = "hiplitehehe/notes";
+      const repo = "Hiplitehehe/Notes";
       const notesUrl = `https://api.github.com/repos/${repo}/contents/j.json`;
 
       let notes = [];
@@ -138,7 +138,7 @@ export default {
 
       // Approve note
       const noteId = parseInt(url.pathname.split("/")[2]);
-      const repo = "hiplitehehe/notes";
+      const repo = "Hiplitehehe/Notes";
       const notesUrl = `https://api.github.com/repos/${repo}/contents/j.json`;
 
       let notes = [];
