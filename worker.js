@@ -72,13 +72,22 @@ export default {
     }
 
     // Approve a Note
-    if (url.pathname === "/approve" && request.method === "POST") {
-      return approveNote(request, env, token);
-    }
+    if (url.pathname === "/approve") {
+  if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
-    return new Response("Not Found", { status: 404 });
-  },
-};
+  const authHeader = request.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  if (token !== env.ALLOWED_TOKEN) {
+    return new Response("Permission denied: Invalid token", { status: 403 });
+  }
+
+  return new Response("Note approved!", { status: 200 });
+}
 
 // Fetch Approved Notes
 async function fetchNotes(env) {
