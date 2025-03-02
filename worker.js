@@ -47,7 +47,7 @@ export default {
       }
 
       return Response.redirect(
-        `https://your-site.com/dashboard?token=${tokenData.access_token}`,
+        `/dashboard?token=${tokenData.access_token}`,
         302
       );
     }
