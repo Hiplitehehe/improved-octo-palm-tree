@@ -10,3 +10,7 @@ compatibility_date = "2025-03-01"
 
 [build]
 command = ""
+
+[[kv_namespaces]]
+binding = "HTML_FILES"
+id = "4a32186a21504cfbb1334cd938070b8a"
