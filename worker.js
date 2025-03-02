@@ -47,7 +47,7 @@ export default {
       }
 
       return Response.redirect(
-        `/dashboard?token=${tokenData.access_token}`,
+        `https://my-worker.hiplitehehe.workers.dev/dashboard?token=${tokenData.access_token}`,
         302
       );
     }
