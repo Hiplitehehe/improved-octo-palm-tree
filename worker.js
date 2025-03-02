@@ -4,11 +4,11 @@ export default {
 
     // Serve the login page
     if (url.pathname === "/login") {
-      const loginHtml = await env.HTML_FILES.get("login.html");
-      return new Response(loginHtml, {
-        headers: { "Content-Type": "text/html" },
-      });
-    }
+  return Response.redirect(
+    `https://github.com/login/oauth/authorize?client_id=${env.GITHUB_CLIENT_ID}&redirect_uri=${env.REDIRECT_URI}&scope=repo`,
+    302
+  );
+}
 
     // Handle GitHub OAuth callback
     if (url.pathname === "/callback") {
