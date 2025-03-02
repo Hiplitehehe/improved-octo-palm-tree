@@ -46,24 +46,34 @@ export default {
 };
 
 // Exchange the code for an access token from GitHub
-async function exchangeCodeForToken(code) {
-  const response = await fetch("https://github.com/login/oauth/access_token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-      "User-Agent": "Your-App-Name"
-    },
-    body: JSON.stringify({
-      client_id: "YOUR_GITHUB_CLIENT_ID", // Replace with your GitHub client ID
-      client_secret: "YOUR_GITHUB_CLIENT_SECRET", // Replace with your GitHub client secret
-      code: code
-    })
-  });
+async function exchangeCodeForToken(code, env) {
+  try {
+    const response = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Your-App-Name"
+      },
+      body: JSON.stringify({
+        client_id: env.GITHUB_CLIENT_ID,  // Access the environment variable
+        client_secret: env.GITHUB_CLIENT_SECRET,  // Access the environment variable
+        code: code
+      })
+    });
 
-  const data = await response.json();
-  if (data.error) {
-    throw new Error(`GitHub OAuth Error: ${data.error_description}`);
+    const data = await response.json();
+
+    if (data.error) {
+      console.error("GitHub OAuth Error:", data.error_description);
+      throw new Error(`GitHub OAuth Error: ${data.error_description}`);
+    }
+
+    console.log("GitHub OAuth Response:", data);
+    return data.access_token;
+
+  } catch (error) {
+    console.error("Error during OAuth token exchange:", error.message);
+    throw new Error(`OAuth Token Exchange Error: ${error.message}`);
   }
-  return data.access_token;
 }
