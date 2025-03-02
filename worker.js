@@ -2,7 +2,86 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const token = url.searchParams.get("token");
+
+    if (url.pathname === "/make-note" && request.method === "POST") {
+      return handleMakeNote(request, env);
+    }
+
+    return new Response("Not Found", { status: 404 });
+  },
+};
+
+async function handleMakeNote(request, env) {
+  try {
+    const { title, content, token } = await request.json();
+
+    if (!title || !content || !token) {
+      return new Response(JSON.stringify({ error: "Missing fields" }), { status: 400 });
+    }
+
+    // Validate user token
+    const user = await validateUser(token, env);
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+
+    // Fetch current notes from GitHub
+    const repo = "hiplitehehe/notes";
+    const filePath = "j.json";
+    const apiUrl = `https://api.github.com/repos/${repo}/contents/${filePath}`;
+
+    const headers = {
+      "Authorization": `token ${env.GITHUB_TOKEN}`,
+      "User-Agent": "Cloudflare-Worker",
+    };
+
+    const fileResponse = await fetch(apiUrl, { headers });
+    if (!fileResponse.ok) {
+      return new Response(JSON.stringify({ error: "Failed to fetch notes" }), { status: 500 });
+    }
+
+    const fileData = await fileResponse.json();
+    const notes = JSON.parse(atob(fileData.content));
+
+    // Add new note
+    const newNote = { title, content, approved: false };
+    notes.push(newNote);
+
+    // Update file on GitHub
+    const updatedContent = btoa(JSON.stringify(notes, null, 2));
+    const updateResponse = await fetch(apiUrl, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        message: "Add new note",
+        content: updatedContent,
+        sha: fileData.sha,
+      }),
+    });
+
+    if (!updateResponse.ok) {
+      return new Response(JSON.stringify({ error: "Failed to save note" }), { status: 500 });
+    }
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  }
+}
+
+// Validate token and get user info
+async function validateUser(token, env) {
+  const userResponse = await fetch(`https://api.github.com/user`, {
+    headers: {
+      "Authorization": `token ${token}`,
+      "User-Agent": "Cloudflare-Worker",
+    },
+  });
+
+  if (!userResponse.ok) return null;
+  return await userResponse.json();
+}
 
     // Serve the dashboard page
     if (url.pathname === "/dashboard") {
