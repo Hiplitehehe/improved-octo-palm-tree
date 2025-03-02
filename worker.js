@@ -4,6 +4,65 @@ export default {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
+    if (pathname === "/dashboard") {
+  const token = url.searchParams.get("token");
+  if (!token) return new Response("Missing token", { status: 401 });
+
+  const isAdmin = token === env.ADMIN_TOKEN;
+  const notesUrl = `https://api.github.com/repos/hiplitehehe/notes/contents/j.json`;
+
+  const notesResponse = await fetch(notesUrl, {
+    headers: {
+      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+      "Accept": "application/vnd.github.v3+json",
+      "User-Agent": "YourApp",
+    },
+  });
+
+  if (!notesResponse.ok) return new Response("Failed to fetch notes", { status: 500 });
+
+  const fileData = await notesResponse.json();
+  let notes = JSON.parse(atob(fileData.content));
+
+  if (!isAdmin) {
+    notes = notes.filter(note => note.approved);
+  }
+
+  let noteList = "<ul>";
+  notes.forEach(note => {
+    noteList += `<li>${note.title} ${
+      isAdmin && !note.approved ? `<button onclick="approve('${note.title}')">Approve</button>` : ""
+    }</li>`;
+  });
+  noteList += "</ul>";
+
+  const dashboardHtml = `
+    <html>
+      <head><title>Dashboard</title></head>
+      <body>
+        <h1>Dashboard</h1>
+        <p>Logged in with token: ${isAdmin ? "Admin" : token}</p>
+        <h2>Notes</h2>
+        ${noteList}
+        <script>
+          function approve(title) {
+            fetch('/approve', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ${token}' },
+              body: JSON.stringify({ title })
+            }).then(() => location.reload());
+          }
+        </script>
+      </body>
+    </html>
+  `;
+
+  return new Response(dashboardHtml, {
+    headers: { "Content-Type": "text/html" },
+    status: 200,
+  });
+}
+    
     // 🔹 Login Route (Redirect to GitHub OAuth)
     if (pathname === "/login") {
       return Response.redirect(
