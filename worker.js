@@ -58,18 +58,19 @@ export default {
   },
 };
 
-// Fetch approved notes data from GitHub repository
+// Fetch approved notes data from GitHub repository with custom User-Agent
 async function fetchNotesData(env) {
-  const repo = "Hiplitehehe/Notes"; // Replace with your repo name
+  const repo = "hiplitehehe/Notes"; // Replace with your repo name
   const notesFile = "j.json"; // The file containing the notes
   const notesUrl = `https://api.github.com/repos/${repo}/contents/${notesFile}`;
 
   try {
-    // Fetch the notes file from GitHub with authorization token
+    // Fetch the notes file from GitHub with authorization token and custom User-Agent
     const response = await fetch(notesUrl, {
       headers: {
         Authorization: `Bearer ${env.GITHUB_TOKEN}`, // Use GitHub token stored in environment variables
         "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "Cloudflare-Worker-App/1.0", // Custom User-Agent
       },
     });
 
