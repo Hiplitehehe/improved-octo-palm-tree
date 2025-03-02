@@ -3,6 +3,13 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    if (url.pathname === "/dashboard") {
+  const dashboardHtml = await env.HTML_FILES.get("dashboard.html");
+  return new Response(dashboardHtml, {
+    headers: { "Content-Type": "text/html" },
+  });
+    }
+    
     // 🔹 Handle user login
     if (url.pathname === "/login") {
       return Response.redirect(
