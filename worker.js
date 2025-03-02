@@ -26,7 +26,7 @@ export default {
       // Fetch approved notes data and handle GitHub API errors
       let notesData;
       try {
-        notesData = await fetchNotesData();
+        notesData = await fetchNotesData(env);
       } catch (error) {
         const errorMessage = `GitHub Error: ${error.message}`;
         return new Response(errorMessage, {
@@ -37,9 +37,13 @@ export default {
 
       // Create a dynamic list of notes
       let notesList = "<ul>";
-      notesData.forEach(note => {
-        notesList += `<li>${note.title}</li>`;
-      });
+      if (notesData.length === 0) {
+        notesList = "<p>No approved notes available.</p>";
+      } else {
+        notesData.forEach(note => {
+          notesList += `<li>${note.title}</li>`;
+        });
+      }
       notesList += "</ul>";
 
       // Replace the placeholder in the notes HTML template
@@ -54,16 +58,30 @@ export default {
   },
 };
 
-// Mock function for fetching approved notes (replace with actual GitHub API logic)
-async function fetchNotesData() {
-  // Simulating a GitHub API request that could fail
-  const response = await fetch("https://api.github.com/repos/hiplitehehe/Notes/contents/j.json");
-  if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.statusText}`);
-  }
-  const data = await response.json();
+// Fetch approved notes data from GitHub repository
+async function fetchNotesData(env) {
+  const repo = "Hiplitehehe/Notes"; // Replace with your repo name
+  const notesFile = "j.json"; // The file containing the notes
+  const notesUrl = `https://api.github.com/repos/${repo}/contents/${notesFile}`;
 
-  // Simulate decoding and returning notes
-  const notes = JSON.parse(atob(data.content));
-  return notes.filter(note => note.approved); // Filter approved notes
+  try {
+    // Fetch the notes file from GitHub with authorization token
+    const response = await fetch(notesUrl, {
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`, // Use GitHub token stored in environment variables
+        "Accept": "application/vnd.github.v3+json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch notes from GitHub: ${response.statusText}`);
+    }
+
+    const fileData = await response.json();
+    const notes = JSON.parse(atob(fileData.content)); // Decode and parse the content
+    return notes.filter(note => note.approved); // Filter for approved notes
+  } catch (error) {
+    console.error("Error fetching notes data:", error);
+    throw new Error("Unable to fetch notes from GitHub");
+  }
 }
