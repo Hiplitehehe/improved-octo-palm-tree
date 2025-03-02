@@ -36,12 +36,17 @@ export default {
   });
   noteList += "</ul>";
 
+  const adminButton = isAdmin
+    ? `<button onclick="location.href='/admin?token=${token}'">Go to Admin</button>`
+    : "";
+
   const dashboardHtml = `
     <html>
       <head><title>Dashboard</title></head>
       <body>
         <h1>Dashboard</h1>
         <p>Logged in with token: ${isAdmin ? "Admin" : token}</p>
+        ${adminButton}
         <h2>Notes</h2>
         ${noteList}
         <script>
@@ -62,7 +67,7 @@ export default {
     status: 200,
   });
 }
-    
+  
     // 🔹 Login Route (Redirect to GitHub OAuth)
     if (pathname === "/login") {
       return Response.redirect(
