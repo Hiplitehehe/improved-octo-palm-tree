@@ -20,7 +20,7 @@ export default {
 
       try {
         const token = await exchangeCodeForToken(code, env);
-        return Response.redirect(`https://your-domain.com/dashboard?token=${token}`);
+        return Response.redirect(`https://my-worker.hiplitehehe.workers.dev/dashboard?token=${token}`);
       } catch (error) {
         return new Response(`Error: ${error.message}`, { status: 500 });
       }
