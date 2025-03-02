@@ -2,17 +2,10 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const pathname = url.pathname;
 
-    // 🔹 Serve Dashboard Page
-    if (url.pathname === "/dashboard") {
-      const dashboardHtml = await env.HTML_FILES.get("dashboard.html");
-      return new Response(dashboardHtml, {
-        headers: { "Content-Type": "text/html" },
-      });
-    }
-
-    // 🔹 GitHub Login Redirect
-    if (url.pathname === "/login") {
+    // 🔹 Login Route (Redirect to GitHub OAuth)
+    if (pathname === "/login") {
       return Response.redirect(
         `https://github.com/login/oauth/authorize?client_id=${env.GITHUB_CLIENT_ID}&redirect_uri=${env.REDIRECT_URI}&scope=repo`,
         302
@@ -20,7 +13,7 @@ export default {
     }
 
     // 🔹 GitHub OAuth Callback
-    if (url.pathname === "/callback") {
+    if (pathname === "/callback") {
       const code = url.searchParams.get("code");
       if (!code) return new Response("Missing code", { status: 400 });
 
@@ -29,7 +22,6 @@ export default {
         headers: {
           "Content-Type": "application/json",
           "Accept": "application/json",
-          "User-Agent": "Cloudflare-Worker",
         },
         body: JSON.stringify({
           client_id: env.GITHUB_CLIENT_ID,
@@ -41,183 +33,146 @@ export default {
 
       const tokenData = await tokenResponse.json();
       if (!tokenData.access_token) {
-        return new Response(`Error: ${JSON.stringify(tokenData)}`, { status: 400 });
+        return new Response(`GitHub Error: ${JSON.stringify(tokenData)}`, { status: 400 });
       }
 
       return Response.redirect(
-        `https://my-worker.hiplitehehe.workers.dev/dashboard?token=${tokenData.access_token}`,
+        `https://hiplitehehe.github.io/bookish-octo-robot/dashboard.html?token=${tokenData.access_token}`,
         302
       );
     }
 
-    // 🔹 Fetch Notes (Only Show Approved for Non-Admins)
-    if (url.pathname === "/notes") {
+    // 🔹 Fetch Notes (Admin sees all, normal users see only approved)
+    if (pathname === "/notes") {
       const token = url.searchParams.get("token");
-      const isAdmin = await verifyAdmin(token, env);
-      return fetchNotes(env, isAdmin);
+      if (!token) return new Response("Missing token", { status: 401 });
+
+      const isAdmin = token === env.ADMIN_TOKEN;
+      const notesUrl = `https://api.github.com/repos/hiplitehehe/notes/contents/j.json`;
+
+      const notesResponse = await fetch(notesUrl, {
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+          "Accept": "application/vnd.github.v3+json",
+          "User-Agent": "YourApp",
+        },
+      });
+
+      if (!notesResponse.ok) return new Response("Failed to fetch notes", { status: 500 });
+
+      const fileData = await notesResponse.json();
+      let notes = JSON.parse(atob(fileData.content));
+
+      if (!isAdmin) {
+        notes = notes.filter(note => note.approved);
+      }
+
+      return new Response(JSON.stringify(notes), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
     }
 
-    // 🔹 Make a Note
-    if (url.pathname === "/make-note" && request.method === "POST") {
-      const token = request.headers.get("Authorization")?.split(" ")[1];
-      if (!token) return new Response("Unauthorized", { status: 401 });
+    // 🔹 Approve Note (Only Admin)
+    if (pathname === "/approve") {
+      if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
-      const body = await request.json();
-      if (!body.title || !body.content) return new Response("Missing data", { status: 400 });
-
-      return makeNote(env, body.title, body.content);
-    }
-
-    // 🔹 Approve Note (Admins Only)
-    if (url.pathname === "/approve" && request.method === "POST") {
-      const token = request.headers.get("Authorization")?.split(" ")[1];
-      if (!token) return new Response("Unauthorized", { status: 401 });
-
-      const isAdmin = await verifyAdmin(token, env);
-      if (!isAdmin) return new Response("Permission denied", { status: 403 });
+      const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+      if (!token || token !== env.ADMIN_TOKEN) {
+        return new Response("Permission denied: Only admin can approve.", { status: 403 });
+      }
 
       const body = await request.json();
       if (!body.title) return new Response("Missing note title", { status: 400 });
 
-      return approveNote(env, body.title);
+      const notesUrl = `https://api.github.com/repos/hiplitehehe/notes/contents/j.json`;
+      const fetchNotes = await fetch(notesUrl, {
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+          "Accept": "application/vnd.github.v3+json",
+          "User-Agent": "YourApp",
+        },
+      });
+
+      if (!fetchNotes.ok) return new Response("Failed to fetch notes", { status: 500 });
+
+      const fileData = await fetchNotes.json();
+      let notes = JSON.parse(atob(fileData.content));
+
+      const noteIndex = notes.findIndex(note => note.title === body.title);
+      if (noteIndex === -1) return new Response("Note not found", { status: 404 });
+
+      notes[noteIndex].approved = true;
+
+      const updateResponse = await fetch(notesUrl, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+          "Accept": "application/vnd.github.v3+json",
+          "Content-Type": "application/json",
+          "User-Agent": "YourApp",
+        },
+        body: JSON.stringify({
+          message: `Approved note: ${body.title}`,
+          content: btoa(JSON.stringify(notes, null, 2)),
+          sha: fileData.sha,
+        }),
+      });
+
+      if (!updateResponse.ok) return new Response("Failed to approve note", { status: 500 });
+
+      return new Response(JSON.stringify({ message: `Note "${body.title}" approved!` }), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // 🔹 Create Note
+    if (pathname === "/make-note") {
+      if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+
+      const body = await request.json();
+      if (!body.title || !body.content) return new Response("Missing fields", { status: 400 });
+
+      const notesUrl = `https://api.github.com/repos/hiplitehehe/notes/contents/j.json`;
+      const fetchNotes = await fetch(notesUrl, {
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+          "Accept": "application/vnd.github.v3+json",
+          "User-Agent": "YourApp",
+        },
+      });
+
+      if (!fetchNotes.ok) return new Response("Failed to fetch notes", { status: 500 });
+
+      const fileData = await fetchNotes.json();
+      let notes = JSON.parse(atob(fileData.content));
+
+      notes.push({ title: body.title, content: body.content, approved: false });
+
+      const updateResponse = await fetch(notesUrl, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+          "Accept": "application/vnd.github.v3+json",
+          "Content-Type": "application/json",
+          "User-Agent": "YourApp",
+        },
+        body: JSON.stringify({
+          message: `Added note: ${body.title}`,
+          content: btoa(JSON.stringify(notes, null, 2)),
+          sha: fileData.sha,
+        }),
+      });
+
+      if (!updateResponse.ok) return new Response("Failed to create note", { status: 500 });
+
+      return new Response(JSON.stringify({ message: `Note "${body.title}" created!` }), {
+        headers: { "Content-Type": "application/json" },
+        status: 201,
+      });
     }
 
     return new Response("Not Found", { status: 404 });
   },
 };
-
-// 🔹 Function to Fetch Notes
-async function fetchNotes(env, isAdmin) {
-  try {
-    const response = await fetch(`https://api.github.com/repos/hiplitehehe/notes/contents/j.json`, {
-      headers: {
-        "User-Agent": "Cloudflare-Worker",
-        "Accept": "application/vnd.github.v3+json",
-      },
-    });
-
-    if (!response.ok) throw new Error(`GitHub API error: ${response.statusText}`);
-
-    const data = await response.json();
-    const notes = JSON.parse(atob(data.content));
-
-    return new Response(JSON.stringify(isAdmin ? notes : notes.filter(note => note.approved)), {
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { "Content-Type": "application/json" },
-      status: 500,
-    });
-  }
-}
-
-// 🔹 Function to Create a Note
-async function makeNote(env, title, content) {
-  try {
-    const response = await fetch(`https://api.github.com/repos/hiplitehehe/notes/contents/j.json`, {
-      headers: {
-        "User-Agent": "Cloudflare-Worker",
-        "Accept": "application/vnd.github.v3+json",
-      },
-    });
-
-    if (!response.ok) throw new Error(`GitHub API error: ${response.statusText}`);
-
-    const data = await response.json();
-    const notes = JSON.parse(atob(data.content));
-
-    notes.push({ title, content, approved: false });
-
-    return updateNotes(env, notes, `New note: ${title}`);
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { "Content-Type": "application/json" },
-      status: 500,
-    });
-  }
-}
-
-// 🔹 Function to Approve a Note
-async function approveNote(env, title) {
-  try {
-    const response = await fetch(`https://api.github.com/repos/hiplitehehe/notes/contents/j.json`, {
-      headers: {
-        "User-Agent": "Cloudflare-Worker",
-        "Accept": "application/vnd.github.v3+json",
-      },
-    });
-
-    if (!response.ok) throw new Error(`GitHub API error: ${response.statusText}`);
-
-    const data = await response.json();
-    const notes = JSON.parse(atob(data.content));
-
-    const note = notes.find(n => n.title === title);
-    if (!note) return new Response("Note not found", { status: 404 });
-
-    note.approved = true;
-    return updateNotes(env, notes, `Approved note: ${title}`);
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { "Content-Type": "application/json" },
-      status: 500,
-    });
-  }
-}
-
-// 🔹 Function to Update Notes in GitHub
-async function updateNotes(env, notes, commitMessage) {
-  const notesUrl = `https://api.github.com/repos/hiplitehehe/notes/contents/j.json`;
-
-  const fileResponse = await fetch(notesUrl, {
-    headers: {
-      "User-Agent": "Cloudflare-Worker",
-      "Accept": "application/vnd.github.v3+json",
-    },
-  });
-
-  if (!fileResponse.ok) throw new Error(`GitHub API error: ${fileResponse.statusText}`);
-
-  const fileData = await fileResponse.json();
-  const updatedContent = btoa(JSON.stringify(notes, null, 2));
-
-  const updateResponse = await fetch(notesUrl, {
-    method: "PUT",
-    headers: {
-      "User-Agent": "Cloudflare-Worker",
-      "Accept": "application/vnd.github.v3+json",
-      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      message: commitMessage,
-      content: updatedContent,
-      sha: fileData.sha,
-    }),
-  });
-
-  if (!updateResponse.ok) throw new Error("Failed to update notes");
-
-  return new Response(JSON.stringify({ message: "Note updated successfully" }), {
-    headers: { "Content-Type": "application/json" },
-    status: 200,
-  });
-}
-
-// 🔹 Function to Verify Admin
-async function verifyAdmin(token, env) {
-  try {
-    const userResponse = await fetch("https://api.github.com/user", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "User-Agent": "Cloudflare-Worker",
-      },
-    });
-
-    const userData = await userResponse.json();
-    return userData.login && token === env.ADMIN_GITHUB_TOKEN; // Only admin token can approve
-  } catch {
-    return false;
-  }
-}
